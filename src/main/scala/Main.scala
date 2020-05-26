@@ -47,18 +47,11 @@ object Common {
 
 object Main extends App {
 
-  def run(args: List[String]) =
-    myAppLogic.exitCode
-
-  val myAppLogic = ZIO.unit
+  def run(args: List[String]) = prog.exitCode
 
   def registerListener(ref: Ref[Vector[Splash[Particle]]]): Unit = ???
 
-  // val prog = for {
-  //   listeners <- Ref.make(Vector.empty[Splash[Particle]])
-  //   gaig      = new GeigerCounter[Task, Particle] {}
-  //   _         <- gaig.start(5, listeners)
-  // } yield ()
+  val gaiger = new GeigerZIOEff[Particle]()
 
-  val prog = new GeigerZIOEff[Particle]()
+  val prog = gaiger.start(15)
 }
