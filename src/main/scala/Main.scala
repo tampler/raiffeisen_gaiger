@@ -1,12 +1,10 @@
 package demo
 
 import zio.{ App, Promise, Ref, Task, ZIO }
-import zio.blocking.blocking
+import zio.blocking.{ blocking, Blocking }
 import zio.console.{ putStrLn, Console }
 import Common._
 import scala.util.Random
-import scala.collection.immutable.Stream.Cons
-import zio.ZLayer
 
 object Common {
   type Splash[A] = A => Unit
@@ -23,13 +21,14 @@ object Common {
     override def registerListener(listener: Splash[A], ref: zio.Ref[Vector[Splash[A]]]): Unit =
       ref.update(_ :+ listener)
 
-    def splashWork[A](item: Splash[A]) = ZIO.unit
+    def splashWork[T](item: Splash[T]) = ZIO.unit
 
-    val env = Console.live
+    val env = Console.live ++ Blocking.live
 
     def work[T](ref: Ref[Vector[Splash[T]]]) =
       for {
         promise <- Promise.make[Nothing, Unit]
+        _       <- blocking(ZIO.effectTotal(Thread.sleep(1000)))
         prt     = Particle(Random.between(0, 1000), Random.between(-1, 2))
         _       <- putStrLn(s"[${Thread.currentThread().getName}] Emitted $prt")
         _       <- ref.get.map(_.foreach(splashWork))
@@ -39,7 +38,7 @@ object Common {
     override def start(n: Int) =
       for {
         listeners <- Ref.make(Vector.empty[Splash[Particle]])
-        go        <- ZIO.foreach(Range(0, n))(_ => work(listeners).provideLayer(env))
+        _         <- ZIO.foreach(Range(0, n))(_ => work(listeners).provideLayer(env))
       } yield ()
 
   }
@@ -55,8 +54,11 @@ object Main extends App {
 
   def registerListener(ref: Ref[Vector[Splash[Particle]]]): Unit = ???
 
-  val prog = for {
-    listeners <- Ref.make(Vector.empty[Splash[Particle]])
-  } yield ()
+  // val prog = for {
+  //   listeners <- Ref.make(Vector.empty[Splash[Particle]])
+  //   gaig      = new GeigerCounter[Task, Particle] {}
+  //   _         <- gaig.start(5, listeners)
+  // } yield ()
 
+  val prog = new GeigerZIOEff[Particle]()
 }
