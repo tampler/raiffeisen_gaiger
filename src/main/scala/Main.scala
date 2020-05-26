@@ -18,31 +18,33 @@ object Common {
 
   class GeigerZIOEff[A]() extends GeigerCounter[Task, A] {
 
-    override def registerListener(listener: Splash[A], ref: zio.Ref[Vector[Splash[A]]]): Unit =
-      ref.update(_ :+ listener)
-
-    def splashWork[T](item: Splash[T]) = ZIO.unit
+    override def registerListener(listener: Splash[A], ref: zio.Ref[Vector[Splash[A]]]) =
+      println(">>>>> ")
+    // ref.getAndUpdate(_ :+ listener)
 
     val env = Console.live ++ Blocking.live
 
-    def work[T](ref: Ref[Vector[Splash[T]]]) =
+    def work(ref: Ref[Vector[Splash[A]]]) =
       for {
         promise <- Promise.make[Nothing, Unit]
-        _       <- blocking(ZIO.effectTotal(Thread.sleep(1000)))
+        _       <- blocking(ZIO.effectTotal(Thread.sleep(1000))).fork
         prt     = Particle(Random.between(0, 1000), Random.between(-1, 2))
         _       <- putStrLn(s"[${Thread.currentThread().getName}] Emitted $prt")
-        _       <- ref.get.map(_.foreach(splashWork))
+        _       <- ref.get.map(_.foreach(listener => registerListener(listener, ref)))
         _       <- promise.await
       } yield ()
 
     override def start(n: Int) =
       for {
-        listeners <- Ref.make(Vector.empty[Splash[Particle]])
-        _         <- ZIO.foreach(Range(0, n))(_ => work(listeners).provideLayer(env))
+        listeners <- Ref.make(Vector.empty[Splash[A]])
+        _ = Range(0, 1).foreach(v =>
+          listeners.update(_ :+ (p => println(s"[${Thread.currentThread().getName}] Listener$v: caught $p")))
+        )
+        _ <- ZIO.foreach(Range(0, n))(_ => work(listeners).provideLayer(env))
       } yield ()
 
+    val list = List.fill(2)(println)
   }
-
 }
 
 object Main extends App {
