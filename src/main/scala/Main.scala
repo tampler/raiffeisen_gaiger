@@ -13,36 +13,36 @@ object Common {
 
   trait GeigerCounter[F[_], A] {
     def registerListener(listener: Splash[A]): Unit
-    def start(n: Int): F[Unit]
+    def start(n: Int, m: Int): F[Unit]
   }
 
   class GeigerZIOEff() extends GeigerCounter[Task, Particle] {
 
     override def registerListener(listener: Splash[Particle]) = ()
 
-    private val env = Console.live ++ Blocking.live
-
     private def listener(n: Int, input: Particle) =
       println(s"[${Thread.currentThread().getName}] Listener$n: caught $input")
 
-    private val sensorList = Range(0, 2).map(i => listener(i, _))
+    private val env = Console.live ++ Blocking.live
 
-    private def emit(num: Int): ZIO[zio.blocking.Blocking with zio.console.Console, Nothing, Particle] =
+    private def emitEff(num: Int): ZIO[zio.blocking.Blocking with zio.console.Console, Nothing, Particle] =
       for {
         _    <- blocking(ZIO.effectTotal(Thread.sleep(1000)))
         part = Particle(Random.between(0, 1000), Random.between(-1, 2))
         _    <- putStrLn(s"[${Thread.currentThread().getName}] Emitted $part")
       } yield part
 
-    private def startEff(n: Int) =
+    private def startEff(
+      totalParticles: Int,
+      totalSensors: Int
+    ): ZIO[zio.blocking.Blocking with zio.console.Console, Throwable, Unit] =
       for {
-        particles <- ZIO.foreachParN(n)(Range(0, n))(emit)
-        sensors   = Chunk.fromIterable(sensorList)
-        _         = sensors.map(v => particles.foreach(v))
+        particles <- ZIO.foreachParN(totalParticles)(Range(0, totalParticles))(emitEff)
+        sensors   = Chunk.fromIterable(Range(0, totalSensors).map(i => listener(i, _)))
+        _         <- sensors.mapMPar(v => ZIO.effect(particles.foreach(v)))
       } yield ()
 
-    override def start(n: Int) = startEff(n).provideLayer(env)
-
+    override def start(n: Int, m: Int) = startEff(n, m).provideLayer(env)
   }
 }
 
@@ -52,5 +52,5 @@ object Main extends App {
 
   val gaiger = new GeigerZIOEff()
 
-  val prog = gaiger.start(3)
+  val prog = gaiger.start(2, 2)
 }
