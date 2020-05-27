@@ -1,6 +1,6 @@
 package demo
 
-import zio.{ App, Ref, Task, ZIO }
+import zio.{ App, Chunk, Task, ZIO }
 import zio.blocking.{ blocking, Blocking }
 import zio.console.{ putStrLn, Console }
 import Common._
@@ -25,8 +25,7 @@ object Common {
     private def listener(n: Int, input: Particle) =
       println(s"[${Thread.currentThread().getName}] Listener$n: caught $input")
 
-    private val list0 = (p: Particle) => listener(0, p)
-    private val list1 = (p: Particle) => listener(1, p)
+    private val sensorList = Range(0, 2).map(i => listener(i, _))
 
     private def emit(num: Int): ZIO[zio.blocking.Blocking with zio.console.Console, Nothing, Particle] =
       for {
@@ -37,11 +36,9 @@ object Common {
 
     private def startEff(n: Int) =
       for {
-        listeners <- Ref.make(Vector.empty[Splash[Particle]])
-        _         <- listeners.update(_ :+ list0)
-        _         <- listeners.update(_ :+ list1)
         particles <- ZIO.foreachParN(n)(Range(0, n))(emit)
-        _         <- listeners.get.map(_.foreach(v => particles.foreach(p => v(p))))
+        sensors   = Chunk.fromIterable(sensorList)
+        _         = sensors.map(v => particles.foreach(v))
       } yield ()
 
     override def start(n: Int) = startEff(n).provideLayer(env)
