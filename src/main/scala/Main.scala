@@ -19,32 +19,39 @@ object Common {
   class GeigerZIOEff[A]() extends GeigerCounter[Task, A] {
 
     override def registerListener(listener: Splash[A], ref: zio.Ref[Vector[Splash[A]]]) = {
+      ref.getAndUpdate(_ :+ listener)
       println(">>>>> ")
-      ref.update(_ :+ (p => println(s"[${Thread.currentThread().getName}] Listener1: caught $p")))
     }
 
     val env = Console.live ++ Blocking.live
 
     def newListener(n: Int, input: A) = println(s"[${Thread.currentThread().getName}] Listener$n: caught $input")
 
-    def work(ref: Ref[Vector[Splash[A]]]) =
+    def emit(num: Int): ZIO[zio.blocking.Blocking with zio.console.Console, Nothing, Particle] =
       for {
-        _   <- blocking(ZIO.effectTotal(Thread.sleep(1000))).fork
-        prt = Particle(Random.between(0, 1000), Random.between(-1, 2))
-        _   <- putStrLn(s"[${Thread.currentThread().getName}] Emitted $prt")
-        _   <- ref.get.map(_.foreach(listener => registerListener(listener, ref)))
+        _    <- blocking(ZIO.effectTotal(Thread.sleep(1000)))
+        part = Particle(Random.between(0, 1000), Random.between(-1, 2))
+        _    <- putStrLn(s"[${Thread.currentThread().getName}] Emitted $part")
+      } yield part
+
+    def work(listeners: Ref[Vector[Splash[A]]]) =
+      for {
+        p <- Promise.make[Nothing, Unit]
+        // fibers <- /* p.succeed(()) *>
+        // _      <- putStrLn(particles.toString)
+        _ <- ZIO.effect(
+              Range(0, 1).foreach(i => registerListener(p => newListener(i, p), listeners))
+            )
+        _ <- p.await
       } yield ()
 
     override def start(n: Int) =
       for {
-        p         <- Promise.make[Nothing, Unit]
         listeners <- Ref.make(Vector.empty[Splash[A]])
-        _         <- ZIO.effect(Range(0, 1).foreach(i => registerListener(newListener(i, part), listeners)))
-        _         <- p.succeed(()) *> ZIO.foreach(Range(0, n))(_ => work(listeners).provideLayer(env))
-        _         <- p.await
+        particles <- ZIO.foreach(Range(0, n))(emit).provideLayer(env)
+        _         <- ZIO.foreach(Range(0, 2))(_ => work(listeners))
       } yield ()
 
-    val list = List.fill(2)(println)
   }
 }
 
@@ -52,9 +59,7 @@ object Main extends App {
 
   def run(args: List[String]) = prog.exitCode
 
-  def registerListener(ref: Ref[Vector[Splash[Particle]]]): Unit = ???
-
   val gaiger = new GeigerZIOEff[Particle]()
 
-  val prog = gaiger.start(15)
+  val prog = gaiger.start(2)
 }
