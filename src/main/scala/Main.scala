@@ -12,20 +12,20 @@ object Common {
   final case class Particle(mass: Int, charge: Int)
 
   trait GeigerCounter[F[_], A] {
-    def registerListener(listener: Splash[A], ref: Ref[Vector[Splash[A]]]): Unit
+    def registerListener(listener: Splash[A]): Unit
     def start(n: Int): F[Unit]
   }
 
   class GeigerZIOEff() extends GeigerCounter[Task, Particle] {
 
-    override def registerListener(listener: Splash[Particle], ref: zio.Ref[Vector[Splash[Particle]]]) = {
-      ref.getAndUpdate(_ :+ listener)
-      println(">>>>> ")
-    }
+    override def registerListener(listener: Splash[Particle]) = ()
 
     val env = Console.live ++ Blocking.live
 
     def listener(n: Int, input: Particle) = println(s"[${Thread.currentThread().getName}] Listener$n: caught $input")
+
+    val list0 = (p: Particle) => listener(0, p)
+    val list1 = (p: Particle) => listener(1, p)
 
     def emit(num: Int): ZIO[zio.blocking.Blocking with zio.console.Console, Nothing, Particle] =
       for {
@@ -34,13 +34,17 @@ object Common {
         _    <- putStrLn(s"[${Thread.currentThread().getName}] Emitted $part")
       } yield part
 
+    // def regEff = ZIO.effect(registerListener(???))
+
     def startEff(n: Int) =
       for {
+        // p         <- Promise.make[Nothing, Unit]
         listeners <- Ref.make(Vector.empty[Splash[Particle]])
+        _         <- listeners.update(_ :+ list0)
+        _         <- listeners.update(_ :+ list1)
         particles <- ZIO.foreach(Range(0, n))(emit)
-        _         <- ZIO.foreach(Range(0, 2))(i => ZIO.effect(registerListener(p => listener(i, p), listeners)))
-        vec       <- listeners.get
-        _         = vec.foreach(l => particles.foreach(entry => l(entry)))
+        _         <- listeners.get.map(_.foreach(v => v(particles.head)))
+        // _ <- p.await
       } yield ()
 
     override def start(n: Int) = startEff(n).provideLayer(env)
