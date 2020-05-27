@@ -16,16 +16,16 @@ object Common {
     def start(n: Int): F[Unit]
   }
 
-  class GeigerZIOEff[A]() extends GeigerCounter[Task, A] {
+  class GeigerZIOEff() extends GeigerCounter[Task, Particle] {
 
-    override def registerListener(listener: Splash[A], ref: zio.Ref[Vector[Splash[A]]]) = {
+    override def registerListener(listener: Splash[Particle], ref: zio.Ref[Vector[Splash[Particle]]]) = {
       ref.getAndUpdate(_ :+ listener)
       println(">>>>> ")
     }
 
     val env = Console.live ++ Blocking.live
 
-    def newListener(n: Int, input: A) = println(s"[${Thread.currentThread().getName}] Listener$n: caught $input")
+    def listener(n: Int, input: Particle) = println(s"[${Thread.currentThread().getName}] Listener$n: caught $input")
 
     def emit(num: Int): ZIO[zio.blocking.Blocking with zio.console.Console, Nothing, Particle] =
       for {
@@ -34,23 +34,16 @@ object Common {
         _    <- putStrLn(s"[${Thread.currentThread().getName}] Emitted $part")
       } yield part
 
-    def work(listeners: Ref[Vector[Splash[A]]]) =
+    def startEff(n: Int) =
       for {
-        p <- Promise.make[Nothing, Unit]
-        // fibers <- /* p.succeed(()) *>
-        // _      <- putStrLn(particles.toString)
-        _ <- ZIO.effect(
-              Range(0, 1).foreach(i => registerListener(p => newListener(i, p), listeners))
-            )
-        _ <- p.await
+        listeners <- Ref.make(Vector.empty[Splash[Particle]])
+        particles <- ZIO.foreach(Range(0, n))(emit)
+        _         <- ZIO.foreach(Range(0, 2))(i => ZIO.effect(registerListener(p => listener(i, p), listeners)))
+        vec       <- listeners.get
+        _         = vec.foreach(l => particles.foreach(entry => l(entry)))
       } yield ()
 
-    override def start(n: Int) =
-      for {
-        listeners <- Ref.make(Vector.empty[Splash[A]])
-        particles <- ZIO.foreach(Range(0, n))(emit).provideLayer(env)
-        _         <- ZIO.foreach(Range(0, 2))(_ => work(listeners))
-      } yield ()
+    override def start(n: Int) = startEff(n).provideLayer(env)
 
   }
 }
@@ -59,7 +52,7 @@ object Main extends App {
 
   def run(args: List[String]) = prog.exitCode
 
-  val gaiger = new GeigerZIOEff[Particle]()
+  val gaiger = new GeigerZIOEff()
 
   val prog = gaiger.start(2)
 }
